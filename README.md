@@ -1,8 +1,8 @@
-FinalProject
-============
-Digital Signal Processing/Frequency Domain Analysis techniques used on music and using the data to influence a 3D Scene.
+Final Project
+=============
+<h4>Frequency Domain Analysis techniques used on music and using the data to influence a 3D Scene.</h4>
 
-All work is done to gh-pages branch, this can be viewed at: [tim-snow.github.io/FinalProject](https://tim-snow.github.io/FinalProject).
+All work is done to the gh-pages branch, this can be viewed [here](https://tim-snow.github.io/FinalProject).
 
 Aims: 
 -----

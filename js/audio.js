@@ -8,41 +8,81 @@ if (typeof AudioContext !== "undefined") {
 }
 	
 var assetPath = "assets/";
+var prevPath; //to reload song at start after initial analysis
 var context, audioBuffer, sourceNode, analyser, 
-	playback = false, analysing = false, hasAnalysed = false;;	
+	playback = false, analysing = false, hasAnalysed = false, halfOpen = false;	
 var javascriptNode = context.createScriptProcessor(0, 1, 1);
 
-$(document).ready(function() {								
+//store arrays for beat analysis
+var band0Avg = new Array(); var band1Avg = new Array(); var band2Avg = new Array();
+var band3Avg = new Array(); var band4Avg = new Array(); var band5Avg = new Array();
+var band0AvgFinal = 0;		var band1AvgFinal = 0;		var band2AvgFinal = 0;
+var band3AvgFinal = 0;		var band4AvgFinal = 0;		var band5AvgFinal = 0;
+//store old values for fadeout
+var avgStore;
+var fBankStore = new Array(0, 0, 0, 0, 0, 0);
+
+$(document).ready(function() {							
 	$("#song1").click(function() {	loadSong("bensound-happyrock.mp3");		});
 	$("#song2").click(function() {	loadSong("bensound-house.mp3");			});
 	$("#song3").click(function() {	loadSong("bensound-jazzyfrenchy.mp3");	});
 	$("#song4").click(function() {	loadSong("bensound-moose.mp3");			});
 	$("#song5").click(function() {	loadSong("bensound-retrosoul.mp3");		});
 	$("#song6").click(function() {	loadSong("bensound-rumble.mp3");		});
-	
+		
 	$("#mainDiv").click(function() {	
 		if($(this).offset().left > 0){
+			showAnalysing();
 			$(this).animate({ opacity: 0.6, left: '-23%', top: '96%'}, 500 );
 		} else {
+			$("#loadBar").stop();
+			$("#analysingDisplay").stop();
+			$("#analysingDisplay").animate({ top: '-20%', left: '40%'}, 250 );
+			$("#loadBar").animate({ bottom: '-10%'}, 250 );
 			$(this).animate({ opacity: 0.8, left: '50%',  top: '10%'}, 500 );
 			if (sourceNode)	{
-				sourceNode.disconnect();	//stop playback if menu is focused
+				sourceNode.disconnect();
 				playback = false;
 				analysing = false;
 				hasAnalysed = false;
 			}
 		}	
 	});
-		
+	
+	function showAnalysing(){
+		if($("#analysingDisplay").offset().top < 0 && analysing){
+			$("#analysingDisplay").animate({ left: '25%', top: '40%'}, 750 );
+			$("#loadBar").animate({ bottom: '48%'}, 750 );	
+			$("#loadBar").animate({ bottom: '48%'}, 5000 );
+			$("#analysingDisplay").animate({ left: '55%'}, 5000 );
+			$("#analysingDisplay").animate({ top: '-20%', left: '40%'}, 750 );
+			$("#loadBar").animate({ bottom: '-10%'}, 750 );
+		}
+	}
+	
+	$("#bandDetails").click(function() {
+		if($(this).offset().left > 0 && !halfOpen){
+			$(this).animate({ left: '21%'}, 500 );
+			halfOpen = true;
+		} else if(halfOpen){
+			$(this).animate({ left: '15%'}, 500 );
+			halfOpen = false;
+		} else {
+			$(this).animate({ left: '26%'}, 500 );	
+		}
+	});
 	window.addEventListener( 'resize', onWindowResize, false );
 	
 	init(); //For webGL context
 	animate();
 });
 
-var prevPath; //to reload song at start after initial analysis
 function loadSong(path){
-	prevPath = path;
+	if(!hasAnalysed){
+		prevPath = path;
+		analysing = true;
+	}
+	playback = true;
 	var request = new XMLHttpRequest();		
 	request.open('GET', assetPath + path, true);
 	request.responseType = 'arraybuffer';
@@ -51,7 +91,7 @@ function loadSong(path){
 	
 	analyser = context.createAnalyser();
 	analyser.smoothingTimeConstant = 0;
-	analyser.fftSize = 512;
+	analyser.fftSize = 256;
 	
 	sourceNode = context.createBufferSource();
 	sourceNode.connect(analyser);
@@ -63,7 +103,6 @@ function loadSong(path){
 		function(buffer){
 			if(!hasAnalysed){
 				precalcBandAvgAmp(buffer);
-				//jquery to show analysing
 				console.log("Sample Rate: ", context.sampleRate);
 			} else {
 				playSound(buffer);
@@ -72,14 +111,7 @@ function loadSong(path){
 	}
 	request.send();
 }
-//store arrays for beat analysis
-var band0Avg = new Array(); var band1Avg = new Array(); var band2Avg = new Array();
-var band3Avg = new Array(); var band4Avg = new Array(); var band5Avg = new Array();
-var band0AvgFinal = 0;		var band1AvgFinal = 0;		var band2AvgFinal = 0;
-var band3AvgFinal = 0;		var band4AvgFinal = 0;		var band5AvgFinal = 0;
-//store old values for fadeout
-var avgStore;
-var fBankStore = new Array(0, 0, 0, 0, 0, 0);
+
 javascriptNode.onaudioprocess = function () {
 	var fBank, average;
 	var array = new Uint8Array(analyser.frequencyBinCount);
@@ -96,10 +128,6 @@ javascriptNode.onaudioprocess = function () {
 		}
 	}
 
-	//score each band comparing beat to average of all frequencies (higher score for beats at higher volumes)
-	//select top scoring band as beat, highlight this eq block
-	//update eq blocks to flash when they detect beat
-	
 	if (playback == true) {
 		analyser.getByteFrequencyData(array);
 		fBank = scheirerFilterBank(array, fBankStore);
@@ -133,7 +161,8 @@ function scheirerFilterBank(freqData, prevFreqData){
 	var band0  = 0, band1  = 0, band2  = 0, 
 		band3  = 0, band4  = 0, band5  = 0,
 		band2c = 0, band3c = 0, band4c = 0;
-	//48000 sample rate, 512 fft size = 256 brackets = 187.5 hz per bracket
+	//48000 sample rate, 256 fft size = 128 brackets = 187.5 hz per bracket
+	//48000 sample rate, 512 fft size = 256 brackets = 93.75 hz per bracket
 	for (var i = 0; i < (freqData.length); i++){
 		if (i == 0) { //0-200hz
 			band0 += freqData[i];
@@ -157,19 +186,51 @@ function scheirerFilterBank(freqData, prevFreqData){
 	band4 = band4 / band4c;
 	
 	if(analysing == true){
-		band0Avg.push(band0);
-		band1Avg.push(band1);
-		band2Avg.push(band2);
-		band3Avg.push(band3);
-		band4Avg.push(band4);
-		band5Avg.push(band5);
+		band0Avg.push(band0);	band1Avg.push(band1);	band2Avg.push(band2);
+		band3Avg.push(band3);	band4Avg.push(band4);	band5Avg.push(band5);
 	} else {
-		if (detectBeats(band0, prevFreqData[0], band0AvgFinal, band0prev)){ console.log("B0 BEAT"); band0prev = true; } else { band0prev = false; }
-		if (detectBeats(band1, prevFreqData[1], band1AvgFinal, band1prev)){ console.log("B1 BEAT"); band1prev = true; } else { band1prev = false; }
-		if (detectBeats(band2, prevFreqData[2], band2AvgFinal, band2prev)){ console.log("B2 BEAT"); band2prev = true; } else { band2prev = false; }
-		if (detectBeats(band3, prevFreqData[3], band3AvgFinal, band3prev)){ console.log("B3 BEAT"); band3prev = true; } else { band3prev = false; }
-		if (detectBeats(band4, prevFreqData[4], band4AvgFinal, band4prev)){ console.log("B4 BEAT"); band4prev = true; } else { band4prev = false; }
-		if (detectBeats(band5, prevFreqData[5], band5AvgFinal, band5prev)){ console.log("B5 BEAT"); band5prev = true; } else { band5prev = false; }
+		if (detectBeats(band0, prevFreqData[0], band0AvgFinal, band0prev)){ 
+			$("#beatBox1").css("background-color","#33cc33"); 
+			band0prev = true; 
+		} else { 
+			$("#beatBox1").css("background-color","#cc3333"); 		
+			band0prev = false; 
+		}
+		if (detectBeats(band1, prevFreqData[1], band1AvgFinal, band1prev)){ 
+			$("#beatBox2").css("background-color","#33cc33"); 
+			band1prev = true; 
+		} else { 
+			$("#beatBox2").css("background-color","#cc3333"); 
+			band1prev = false; 
+		}
+		if (detectBeats(band2, prevFreqData[2], band2AvgFinal, band2prev)){ 
+			$("#beatBox3").css("background-color","#33cc33"); 
+			band2prev = true; 
+		} else { 
+			$("#beatBox3").css("background-color","#cc3333"); 
+			band2prev = false; 
+		}
+		if (detectBeats(band3, prevFreqData[3], band3AvgFinal, band3prev)){ 
+			$("#beatBox4").css("background-color","#33cc33"); 
+			band3prev = true; 
+		} else { 
+			$("#beatBox4").css("background-color","#cc3333"); 
+			band3prev = false; 
+		}
+		if (detectBeats(band4, prevFreqData[4], band4AvgFinal, band4prev)){ 
+			$("#beatBox5").css("background-color","#33cc33"); 
+			band4prev = true; 
+		} else { 
+			$("#beatBox5").css("background-color","#cc3333"); 
+			band4prev = false; 
+		}
+		if (detectBeats(band5, prevFreqData[5], band5AvgFinal, band5prev)){ 
+			$("#beatBox6").css("background-color","#33cc33");  
+			band5prev = true; 
+		} else { 
+			$("#beatBox6").css("background-color","#cc3333"); 
+			band5prev = false; 
+		}
 	}
 	var fBank = new Array(band0, band1, band2, band3, band4, band5);
 	return fBank;
@@ -211,8 +272,6 @@ function checkAvgAmp(band){
 
 function precalcBandAvgAmp(buffer){
 	sourceNode.buffer = buffer;
-	analysing = true;
-	playback = true;
 	sourceNode.start(0, 20, 5);	//Analyse sec 20-25 
 }
 		

@@ -6,9 +6,10 @@ if (typeof AudioContext !== "undefined") {
 	$(".hideIfNoApi").hide();
 	$(".showIfNoApi").show();
 }
-	
+		
 var assetPath = "assets/";
 var prevPath; //to reload song at start after initial analysis
+var localSong = false;
 var context,  audioBuffer, sourceNode,  analyser, 
 	playback, analysing,   hasAnalysed, halfOpen;	
 var javascriptNode = context.createScriptProcessor(0, 1, 1);
@@ -30,17 +31,17 @@ var band0sAr = new Array(), band1sAr = new Array(), band2sAr = new Array(),
 	band3sAr = new Array(), band4sAr = new Array(), band5sAr = new Array();
 var bandScoresHistory = new Array();
 
-$(document).ready(function() {		
+$(document).ready(function() {	
 	playback 	= false; 	analysing = false;
-	hasAnalysed = false; 	halfOpen  = false;	
+	hasAnalysed = false; 	halfOpen  = false;
 					
-	$("#song1").click(function() {	loadSong("bensound-happyrock.mp3");		});
-	$("#song2").click(function() {	loadSong("bensound-house.mp3");			});
-	$("#song3").click(function() {	loadSong("bensound-jazzyfrenchy.mp3");	});
-	$("#song4").click(function() {	loadSong("bensound-moose.mp3");			});
-	$("#song5").click(function() {	loadSong("bensound-retrosoul.mp3");		});
-	$("#song6").click(function() {	loadSong("bensound-rumble.mp3");		});
-		
+	$("#song1").click(function() {	loadSong("bensound-happyrock.mp3", 		false);	});
+	$("#song2").click(function() {	loadSong("bensound-house.mp3", 			false);	});
+	$("#song3").click(function() {	loadSong("bensound-jazzyfrenchy.mp3", 	false);	});
+	$("#song4").click(function() {	loadSong("bensound-moose.mp3", 			false);	});
+	$("#song5").click(function() {	loadSong("bensound-retrosoul.mp3", 		false);	});
+	$("#song6").click(function() {	loadSong("bensound-rumble.mp3", 		false);	});
+
 	$("#mainDiv").click(function() {	
 		if($(this).offset().left > 0){
 			$(this).animate({ opacity: 0.6, left: '-23%', top: '96%'}, 500 );
@@ -52,8 +53,8 @@ $(document).ready(function() {
 			$(this).animate({ opacity: 0.8, left: '50%',  top: '10%'}, 500 );
 			if (sourceNode)	{
 				sourceNode.disconnect();
-				playback = false;
-				analysing = false;
+				playback 	= false;
+				analysing 	= false;
 				hasAnalysed = false;
 			}
 		}	
@@ -70,17 +71,56 @@ $(document).ready(function() {
 			$(this).animate({ left: '26%'}, 500 );	
 		}
 	});
+		
+	var file;
+	var drop = document.getElementById("dragSongBox");
+	if(window.FileReader){
+	  function onDrop(evt) {
+		evt.stopPropagation();
+		evt.preventDefault();
+		
+		var reader = new FileReader();
+		file = evt.dataTransfer.files.item(0); // FileList object.
+		reader.readAsArrayBuffer(file);
+		
+		reader.addEventListener('loadend', function(){
+			if(file.type.match(/audio\/(mp3|mpeg|ogg)/)){
+				$("#mainDiv").animate({ opacity: 0.6, left: '-23%', top: '96%'}, 500 );
+				loadSong(this.result, true);
+			} else { console.log("Bad file type"); }
+		}, false);
+	  }
+	  
+	  function onDragOver(evt) {
+		evt.stopPropagation();
+		evt.preventDefault();
+	  }
+
+	  drop.addEventListener('dragover', onDragOver, false);
+	  drop.addEventListener('drop', 	onDrop, 	false);
+	} else { $("dragSongBox").hide(); }
+	
 	window.addEventListener( 'resize', onWindowResize, false );
 	
 	init(); //For webGL context
 	animate();
 });
 
-function loadSong(path){
+function copy(src) {	/* http://stackoverflow.com/questions/10100798/whats-the-most-straightforward-way-to-copy-an-arraybuffer-object 'Gleno' answer*/
+    var dst = new ArrayBuffer(src.byteLength);
+    new Uint8Array(dst).set(new Uint8Array(src));
+    return dst;
+}
+
+function loadSong(path, isLocal){
 	if(!hasAnalysed){
 		$("#analysingDisplay").animate({ left: '25%', top: '40%'}, 1500 );
 		$("#loadBar").animate({ bottom: '48%'}, 1500 );	
-		prevPath = path;
+		if(isLocal){
+			prevPath = copy(path);
+		} else {
+			prevPath = path;
+		}
 		analysing = true;
 	} else {
 		$("#analysingDisplay").animate({ top: '-20%', left: '40%'}, 750 );
@@ -88,9 +128,15 @@ function loadSong(path){
 	}
 	
 	playback = true;
-	var request = new XMLHttpRequest();		
-	request.open('GET', assetPath + path, true);
-	request.responseType = 'arraybuffer';
+	
+	if(!isLocal){
+		localSong 	= false;
+		var request = new XMLHttpRequest();		
+		request.open('GET', assetPath + path, true);
+		request.responseType = 'arraybuffer';
+	} else {
+		localSong = true;
+	}
 	
 	javascriptNode.connect(context.destination);
 	
@@ -103,18 +149,30 @@ function loadSong(path){
 	analyser.connect(javascriptNode);
 	sourceNode.connect(context.destination);
 		
-	request.onload = function() { 
-		context.decodeAudioData(request.response, 
-		function(buffer){
-			if(!hasAnalysed){
-				precalcBandAvgAmp(buffer);
-				console.log("Sample Rate: ", context.sampleRate);
-			} else {
-				playSound(buffer);
-			}
-		}, onError);
+	if(!localSong){	
+		request.onload = function() { 
+			context.decodeAudioData(request.response, 
+			function(buffer){
+				if(!hasAnalysed){
+					precalcBandAvgAmp(buffer);
+					console.log("Sample Rate: ", context.sampleRate);
+				} else {
+					playSound(buffer);
+				}
+			}, onError);
+		}
+		request.send();
+	} else {
+		context.decodeAudioData(path, 
+			function(buffer){
+				if(!hasAnalysed){
+					precalcBandAvgAmp(buffer);
+					console.log("Sample Rate: ", context.sampleRate);
+				} else {
+					playSound(buffer);
+				}
+			}, onError);
 	}
-	request.send();
 }
 
 javascriptNode.onaudioprocess = function () {
@@ -126,17 +184,14 @@ javascriptNode.onaudioprocess = function () {
 			hasAnalysed = true;
 			analysing 	= false;
 			console.log("Finished Analysing");
-			storeBandAvgs();
 
-			loadSong(prevPath);
+			loadSong(prevPath, localSong);
 			bandScores 	= new Array(0, 0, 0, 0, 0, 0);
 			bandBeats 	= new Array(false, false, false, false, false, false);
 			band0sAr 	= new Array(), band1sAr = new Array(), band2sAr = new Array(),
 			band3sAr 	= new Array(), band4sAr = new Array(), band5sAr = new Array();
 			bandScoresHistory = new Array();
 			bandScoresHistory =[band0sAr, band1sAr, band2sAr, band3sAr, band4sAr, band5sAr];
-		} else { 
-			$("#mainDiv").animate({ opacity: 0.8, left: '50%',  top: '10%'}, 500 );
 		}
 	}
 	
@@ -148,22 +203,26 @@ javascriptNode.onaudioprocess = function () {
 				
 		changeLight(average);
 		updateEqPlatforms(fBank);
+		updateBeatBoxes(bandBeats);
 		avgStore 	= average;
 		fBankStore  = fBank;
 	} else {
-	//fadeout when music is stopped
-		for (var i = 0; i < (fBankStore.length); i++){
-			if(fBankStore[i] >= 2) { 
-				fBankStore[i] -= 2; 
-			} else { fBankStore[i] = 1; }
-		}
-		if (avgStore >= 1) { 
-			avgStore -= 1; 
-		} else { avgStore = 0; }
-		
-		updateEqPlatforms(fBankStore);
-		changeLight(avgStore);
+		fadeout();
 	}
+}
+
+function fadeout(){
+	for (var i = 0; i < (fBankStore.length); i++){
+		if(fBankStore[i] >= 2) { 
+			fBankStore[i] -= 2; 
+		} else { fBankStore[i] = 1; }
+	}
+	if (avgStore >= 1) { 
+		avgStore -= 1; 
+	} else { avgStore = 0; }
+	
+	updateEqPlatforms(fBankStore);
+	changeLight(avgStore);
 }
 
 function scheirerFilterBank(freqData, prevFreqData){
@@ -194,75 +253,83 @@ function scheirerFilterBank(freqData, prevFreqData){
 	band3 = band3 / band3c; 
 	band4 = band4 / band4c;
 	
-	if(analysing == true){
-		band0Avg.push(band0);	band1Avg.push(band1);	band2Avg.push(band2);
-		band3Avg.push(band3);	band4Avg.push(band4);	band5Avg.push(band5);
-	} else {
-		bandBeats[0] = detectBeats(band0, prevFreqData[0], band0AvgFinal, band0prev);
-		bandBeats[1] = detectBeats(band1, prevFreqData[1], band1AvgFinal, band1prev);
-		bandBeats[2] = detectBeats(band2, prevFreqData[2], band2AvgFinal, band2prev);
-		bandBeats[3] = detectBeats(band3, prevFreqData[3], band3AvgFinal, band3prev);
-		bandBeats[4] = detectBeats(band4, prevFreqData[4], band4AvgFinal, band4prev);
-		bandBeats[5] = detectBeats(band5, prevFreqData[5], band5AvgFinal, band5prev);
+	addToArrayLimited(band0, band0Avg, 100);
+	addToArrayLimited(band1, band1Avg, 100);
+	addToArrayLimited(band2, band2Avg, 100);
+	addToArrayLimited(band3, band3Avg, 100);
+	addToArrayLimited(band4, band4Avg, 100);
+	addToArrayLimited(band5, band5Avg, 100);
+
+	storeBandAvgs();
+
+	bandBeats[0] = detectBeats(band0, prevFreqData[0], band0AvgFinal, band0prev);
+	bandBeats[1] = detectBeats(band1, prevFreqData[1], band1AvgFinal, band1prev);
+	bandBeats[2] = detectBeats(band2, prevFreqData[2], band2AvgFinal, band2prev);
+	bandBeats[3] = detectBeats(band3, prevFreqData[3], band3AvgFinal, band3prev);
+	bandBeats[4] = detectBeats(band4, prevFreqData[4], band4AvgFinal, band4prev);
+	bandBeats[5] = detectBeats(band5, prevFreqData[5], band5AvgFinal, band5prev);
 		
-		if (bandBeats[0]){ 
+	var fBank = new Array(band0, band1, band2, band3, band4, band5);
+	return fBank;
+}
+
+function updateBeatBoxes(beats){
+		if (beats[0]){ 
 			$("#beatBox1").css("background-color","#33cc33"); 
 			band0prev = true; 
 		} else { 
 			$("#beatBox1").css("background-color","#cc3333"); 		
 			band0prev = false; 
 		}
-		if (bandBeats[1]){
+		if (beats[1]){
 			$("#beatBox2").css("background-color","#33cc33"); 
 			band1prev = true; 
 		} else { 
 			$("#beatBox2").css("background-color","#cc3333"); 
 			band1prev = false; 
 		}
-		if (bandBeats[2]){
+		if (beats[2]){
 			$("#beatBox3").css("background-color","#33cc33"); 
 			band2prev = true; 
 		} else { 
 			$("#beatBox3").css("background-color","#cc3333"); 
 			band2prev = false; 
 		}
-		if (bandBeats[3]){
+		if (beats[3]){
 			$("#beatBox4").css("background-color","#33cc33"); 
 			band3prev = true; 
 		} else { 
 			$("#beatBox4").css("background-color","#cc3333"); 
 			band3prev = false; 
 		}
-		if (bandBeats[4]){
+		if (beats[4]){
 			$("#beatBox5").css("background-color","#33cc33"); 
 			band4prev = true; 
 		} else { 
 			$("#beatBox5").css("background-color","#cc3333"); 
 			band4prev = false; 
 		}
-		if (bandBeats[5]){
+		if (beats[5]){
 			$("#beatBox6").css("background-color","#33cc33");  
 			band5prev = true; 
 		} else { 
 			$("#beatBox6").css("background-color","#cc3333"); 
 			band5prev = false; 
 		}
-	}
-	var fBank = new Array(band0, band1, band2, band3, band4, band5);
-	return fBank;
 }
 
 function detectBeats(currentAmp, lastAmp, avgAmp, prevDetect){
 //if getting louder ignore, if at peak (was louder now getting quieter + still louder then average) = beat
+//need work around for non existent var references
 	if ( currentAmp > avgAmp ){
 		if ( lastAmp > currentAmp ){
 			if (prevDetect == false ){
-				this.prevDetect = true;
+				prevDetect = true;
 				return true;
 			}
 		}
 	} else {
-		this.prevDetect = false;
+		prevDetect = false;
 		return false;	
 	}
 }
@@ -274,17 +341,20 @@ function scoreAgents(beatBool, bandAmp, average){
 
 	for(var i = 0; i < (beatBool.length); i++){
 		if(beatBool[i]){
-			addToArrayLimited( (average / bandAmp[i]), bandScoresHistory[i], 100);
-			bandScores[i] = checkAvgAmp(bandScoresHistory[i]);
-		}
-		if (bandScores[i] >= topScore) {
+			addToArrayLimited( (average/128) + bandAmp[i], bandScoresHistory[i], 50 );
+		} else {
+			addToArrayLimited( 0, bandScoresHistory[i], 50 );
+		}		
+		bandScores[i] = checkAvgAmp( bandScoresHistory[i] );
+		
+		if ( bandScores[i] >= topScore ) {
 			topScore = bandScores[i];
 			topID = i;
 		}
 	}
-	for(var i = 0; i < (scoresJQ.length); i++){
-		scoresJQ[i].html(bandScores[i].toFixed(2));
-		if( i == topID ){
+	for ( var i = 0; i < (scoresJQ.length); i++ ) {
+		scoresJQ[i].html( bandScores[i].toFixed(2) );
+		if ( i == topID ) {
 			scoresJQ[i].css("background-color","#33cc33"); 
 		} else {
 			scoresJQ[i].css("background-color","#aaaaaa"); 

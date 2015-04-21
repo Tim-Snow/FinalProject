@@ -341,9 +341,9 @@ function scoreAgents(beatBool, bandAmp, average){
 
 	for(var i = 0; i < (beatBool.length); i++){
 		if(beatBool[i]){
-			addToArrayLimited( (average/128) + bandAmp[i], bandScoresHistory[i], 50 );
+			addToArrayLimited( (average/128) + bandAmp[i], bandScoresHistory[i], 100 );
 		} else {
-			addToArrayLimited( 0, bandScoresHistory[i], 50 );
+			addToArrayLimited( 0, bandScoresHistory[i], 100 );
 		}		
 		bandScores[i] = checkAvgAmp( bandScoresHistory[i] );
 		
@@ -353,13 +353,18 @@ function scoreAgents(beatBool, bandAmp, average){
 		}
 	}
 	for ( var i = 0; i < (scoresJQ.length); i++ ) {
-		scoresJQ[i].html( bandScores[i].toFixed(2) );
+		scoresJQ[i].html( bandScores[i].toFixed(1) );
 		if ( i == topID ) {
+			//var bpm = checkBpmTimer();
 			scoresJQ[i].css("background-color","#33cc33"); 
 		} else {
-			scoresJQ[i].css("background-color","#aaaaaa"); 
+			scoresJQ[i].css("background-color","#222222"); 
 		}
 	}
+}
+
+function checkBpmTimer(){
+	
 }
 
 function addToArrayLimited(value, array, length){

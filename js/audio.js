@@ -30,6 +30,7 @@ var bandScores = new Array(0, 0, 0, 0, 0, 0);
 var band0sAr = new Array(), band1sAr = new Array(), band2sAr = new Array(),
 	band3sAr = new Array(), band4sAr = new Array(), band5sAr = new Array();
 var bandScoresHistory = new Array();
+var topID;
 
 $(document).ready(function() {	
 	playback 	= false; 	analysing = false;
@@ -199,13 +200,14 @@ javascriptNode.onaudioprocess = function () {
 		analyser.getByteFrequencyData(array);
 		fBank 	 = scheirerFilterBank(array, fBankStore);
 		average  = checkAvgAmp(array);
-		if (hasAnalysed) { scoreAgents(bandBeats, fBank, average); }
-				
-		changeLight(average);
-		updateEqPlatforms(fBank);
-		updateBeatBoxes(bandBeats);
-		avgStore 	= average;
-		fBankStore  = fBank;
+		if (hasAnalysed) { 
+			scoreAgents(bandBeats, fBank, average);
+			changeLight(average);
+			updateEqPlatforms(fBank, bandBeats, topID);
+			updateBeatBoxes(bandBeats);
+			avgStore 	= average;
+			fBankStore  = fBank;
+		}		
 	} else {
 		fadeout();
 	}
@@ -253,12 +255,12 @@ function scheirerFilterBank(freqData, prevFreqData){
 	band3 = band3 / band3c; 
 	band4 = band4 / band4c;
 	
-	addToArrayLimited(band0, band0Avg, 100);
-	addToArrayLimited(band1, band1Avg, 100);
-	addToArrayLimited(band2, band2Avg, 100);
-	addToArrayLimited(band3, band3Avg, 100);
-	addToArrayLimited(band4, band4Avg, 100);
-	addToArrayLimited(band5, band5Avg, 100);
+	addToArrayLimited(band0, band0Avg, 200);
+	addToArrayLimited(band1, band1Avg, 200);
+	addToArrayLimited(band2, band2Avg, 200);
+	addToArrayLimited(band3, band3Avg, 200);
+	addToArrayLimited(band4, band4Avg, 200);
+	addToArrayLimited(band5, band5Avg, 200);
 
 	storeBandAvgs();
 
@@ -335,36 +337,35 @@ function detectBeats(currentAmp, lastAmp, avgAmp, prevDetect){
 }
 
 function scoreAgents(beatBool, bandAmp, average){
-	var topScore = 0; var topID = 0;
+	var topScore = 0; 
+	var tID = 0;
+	
 	var scoresJQ = new Array ( $("#score1"), $("#score2"), $("#score3"), 
 						       $("#score4"), $("#score5"), $("#score6") );
 
 	for(var i = 0; i < (beatBool.length); i++){
 		if(beatBool[i]){
-			addToArrayLimited( (average/128) + bandAmp[i], bandScoresHistory[i], 100 );
+			addToArrayLimited( (average/128) + bandAmp[i], bandScoresHistory[i], 200 );
 		} else {
-			addToArrayLimited( 0, bandScoresHistory[i], 100 );
+			addToArrayLimited( 0, bandScoresHistory[i], 200 );
 		}		
 		bandScores[i] = checkAvgAmp( bandScoresHistory[i] );
 		
 		if ( bandScores[i] >= topScore ) {
 			topScore = bandScores[i];
-			topID = i;
+			tID = i;
 		}
 	}
 	for ( var i = 0; i < (scoresJQ.length); i++ ) {
 		scoresJQ[i].html( bandScores[i].toFixed(1) );
-		if ( i == topID ) {
+		if ( i == tID ) {
 			//var bpm = checkBpmTimer();
 			scoresJQ[i].css("background-color","#33cc33"); 
 		} else {
 			scoresJQ[i].css("background-color","#222222"); 
 		}
 	}
-}
-
-function checkBpmTimer(){
-	
+	topID = tID;
 }
 
 function addToArrayLimited(value, array, length){

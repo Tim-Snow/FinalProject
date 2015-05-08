@@ -1,110 +1,52 @@
+//http://creativejs.com/resources/web-audio-api-getting-started/
+var context;
 if (typeof AudioContext !== "undefined") {
 	context = new AudioContext();
 } else if (typeof webkitAudioContext !== "undefined") {
 	context = new webkitAudioContext();
 } else {
-	$(".hideIfNoApi").hide();
-	$(".showIfNoApi").show();
+    throw new Error('AudioContext not supported.');
 }
-		
+
+var javascriptNode = context.createScriptProcessor(2048, 1, 1);
 var assetPath = "assets/";
 var prevPath; //to reload song at start after initial analysis
 var localSong = false;
-var context,  audioBuffer, sourceNode,  analyser, 
-	playback, analysing,   hasAnalysed, halfOpen;	
-var javascriptNode = context.createScriptProcessor(0, 1, 1);
+var audioBuffer, 		sourceNode,  		analyser,
+	playback = false, 	analysing = false,  hasAnalysed = false;
+	
 //store old values for fadeout
 var avgStore;
 var fBankStore = new Array(0, 0, 0, 0, 0, 0);
+
 //store arrays for beat analysis
 var band0Avg = new Array(), band1Avg = new Array(), band2Avg = new Array(),
 	band3Avg = new Array(), band4Avg = new Array(), band5Avg = new Array();
+	
 var band0AvgFinal = 0, band1AvgFinal = 0, band2AvgFinal = 0,
 	band3AvgFinal = 0, band4AvgFinal = 0, band5AvgFinal = 0;
+	
 var bandBeats = new Array(false, false, false, false, false, false);
+
 //will not register another beat before dropping below avg amp
 var band0prev = false, band1prev = false, band2prev = false,
 	band3prev = false, band4prev = false, band5prev = false;
+	
 //scores for each agent
 var bandScores = new Array(0, 0, 0, 0, 0, 0);
 var band0sAr = new Array(), band1sAr = new Array(), band2sAr = new Array(),
 	band3sAr = new Array(), band4sAr = new Array(), band5sAr = new Array();
 var bandScoresHistory = new Array();
-var topID;
+var topID, scoresJQ;
 
 $(document).ready(function() {	
-	playback 	= false; 	analysing = false;
-	hasAnalysed = false; 	halfOpen  = false;
-					
-	$("#song1").click(function() {	loadSong("bensound-happyrock.mp3", 		false);	});
-	$("#song2").click(function() {	loadSong("bensound-house.mp3", 			false);	});
-	$("#song3").click(function() {	loadSong("bensound-jazzyfrenchy.mp3", 	false);	});
-	$("#song4").click(function() {	loadSong("bensound-moose.mp3", 			false);	});
-	$("#song5").click(function() {	loadSong("bensound-retrosoul.mp3", 		false);	});
-	$("#song6").click(function() {	loadSong("bensound-rumble.mp3", 		false);	});
-
-	$("#mainDiv").click(function() {	
-		if($(this).offset().left > 0){
-			$(this).animate({ opacity: 0.6, left: '-23%', top: '96%'}, 500 );
-		} else {
-			$("#loadBar").stop();
-			$("#analysingDisplay").stop();
-			$("#analysingDisplay").animate({ top: '-20%', left: '40%'}, 250 );
-			$("#loadBar").animate({ bottom: '-10%'}, 250 );
-			$(this).animate({ opacity: 0.8, left: '50%',  top: '10%'}, 500 );
-			if (sourceNode)	{
-				sourceNode.disconnect();
-				playback 	= false;
-				analysing 	= false;
-				hasAnalysed = false;
-			}
-		}	
-	});
-		
-	$("#bandDetails").click(function() {
-		if($(this).offset().left > 0 && !halfOpen){
-			$(this).animate({ left: '21%'}, 500 );
-			halfOpen = true;
-		} else if(halfOpen){
-			$(this).animate({ left: '15%'}, 500 );
-			halfOpen = false;
-		} else {
-			$(this).animate({ left: '26%'}, 500 );	
-		}
-	});
-		
-	var file;
-	var drop = document.getElementById("dragSongBox");
-	if(window.FileReader){
-	  function onDrop(evt) {
-		evt.stopPropagation();
-		evt.preventDefault();
-		
-		var reader = new FileReader();
-		file = evt.dataTransfer.files.item(0); // FileList object.
-		reader.readAsArrayBuffer(file);
-		
-		reader.addEventListener('loadend', function(){
-			if(file.type.match(/audio\/(mp3|mpeg|ogg)/)){
-				$("#mainDiv").animate({ opacity: 0.6, left: '-23%', top: '96%'}, 500 );
-				loadSong(this.result, true);
-			} else { console.log("Bad file type"); }
-		}, false);
-	  }
-	  
-	  function onDragOver(evt) {
-		evt.stopPropagation();
-		evt.preventDefault();
-	  }
-
-	  drop.addEventListener('dragover', onDragOver, false);
-	  drop.addEventListener('drop', 	onDrop, 	false);
-	} else { $("dragSongBox").hide(); }
-	
 	window.addEventListener( 'resize', onWindowResize, false );
 	
-	init(); //For webGL context
-	animate();
+	scoresJQ = new Array ( $("#score1"), $("#score2"), $("#score3"), 
+						   $("#score4"), $("#score5"), $("#score6") );
+						 	
+	init(); //For webGL context - scene functions
+	animate(); //scene function
 });
 
 function copy(src) {	/* http://stackoverflow.com/questions/10100798/whats-the-most-straightforward-way-to-copy-an-arraybuffer-object 'Gleno' answer*/
@@ -142,7 +84,7 @@ function loadSong(path, isLocal){
 	javascriptNode.connect(context.destination);
 	
 	analyser = context.createAnalyser();
-	analyser.smoothingTimeConstant = 0;
+	analyser.smoothingTimeConstant = 0.1;
 	analyser.fftSize = 256;
 	
 	sourceNode = context.createBufferSource();
@@ -165,14 +107,14 @@ function loadSong(path, isLocal){
 		request.send();
 	} else {
 		context.decodeAudioData(path, 
-			function(buffer){
-				if(!hasAnalysed){
-					precalcBandAvgAmp(buffer);
-					console.log("Sample Rate: ", context.sampleRate);
-				} else {
-					playSound(buffer);
-				}
-			}, onError);
+		function(buffer){
+			if(!hasAnalysed){
+				precalcBandAvgAmp(buffer);
+				console.log("Sample Rate: ", context.sampleRate);
+			} else {
+				playSound(buffer);
+			}
+		}, onError);
 	}
 }
 
@@ -187,6 +129,7 @@ javascriptNode.onaudioprocess = function () {
 			console.log("Finished Analysing");
 
 			loadSong(prevPath, localSong);
+		
 			bandScores 	= new Array(0, 0, 0, 0, 0, 0);
 			bandBeats 	= new Array(false, false, false, false, false, false);
 			band0sAr 	= new Array(), band1sAr = new Array(), band2sAr = new Array(),
@@ -196,14 +139,16 @@ javascriptNode.onaudioprocess = function () {
 		}
 	}
 	
+	if(analysing){ fadeout(); }
+	
 	if (playback) {
 		analyser.getByteFrequencyData(array);
 		fBank 	 = scheirerFilterBank(array, fBankStore);
 		average  = checkAvgAmp(array);
 		if (hasAnalysed) { 
 			scoreAgents(bandBeats, fBank, average);
-			changeLight(average);
-			updateEqPlatforms(fBank, bandBeats, topID);
+			changeLight(average);	//scene function
+			updateEqPlatforms(fBank, bandBeats, topID);	//scene function
 			updateBeatBoxes(bandBeats);
 			avgStore 	= average;
 			fBankStore  = fBank;
@@ -255,12 +200,12 @@ function scheirerFilterBank(freqData, prevFreqData){
 	band3 = band3 / band3c; 
 	band4 = band4 / band4c;
 	
-	addToArrayLimited(band0, band0Avg, 200);
-	addToArrayLimited(band1, band1Avg, 200);
-	addToArrayLimited(band2, band2Avg, 200);
-	addToArrayLimited(band3, band3Avg, 200);
-	addToArrayLimited(band4, band4Avg, 200);
-	addToArrayLimited(band5, band5Avg, 200);
+	addToArrayLimited(band0, band0Avg, 350);
+	addToArrayLimited(band1, band1Avg, 350);
+	addToArrayLimited(band2, band2Avg, 350);
+	addToArrayLimited(band3, band3Avg, 350);
+	addToArrayLimited(band4, band4Avg, 350);
+	addToArrayLimited(band5, band5Avg, 350);
 
 	storeBandAvgs();
 
@@ -276,48 +221,48 @@ function scheirerFilterBank(freqData, prevFreqData){
 }
 
 function updateBeatBoxes(beats){
-		if (beats[0]){ 
-			$("#beatBox1").css("background-color","#33cc33"); 
-			band0prev = true; 
-		} else { 
-			$("#beatBox1").css("background-color","#cc3333"); 		
-			band0prev = false; 
-		}
-		if (beats[1]){
-			$("#beatBox2").css("background-color","#33cc33"); 
-			band1prev = true; 
-		} else { 
-			$("#beatBox2").css("background-color","#cc3333"); 
-			band1prev = false; 
-		}
-		if (beats[2]){
-			$("#beatBox3").css("background-color","#33cc33"); 
-			band2prev = true; 
-		} else { 
-			$("#beatBox3").css("background-color","#cc3333"); 
-			band2prev = false; 
-		}
-		if (beats[3]){
-			$("#beatBox4").css("background-color","#33cc33"); 
-			band3prev = true; 
-		} else { 
-			$("#beatBox4").css("background-color","#cc3333"); 
-			band3prev = false; 
-		}
-		if (beats[4]){
-			$("#beatBox5").css("background-color","#33cc33"); 
-			band4prev = true; 
-		} else { 
-			$("#beatBox5").css("background-color","#cc3333"); 
-			band4prev = false; 
-		}
-		if (beats[5]){
-			$("#beatBox6").css("background-color","#33cc33");  
-			band5prev = true; 
-		} else { 
-			$("#beatBox6").css("background-color","#cc3333"); 
-			band5prev = false; 
-		}
+	if (beats[0]){ 
+		$("#beatBox1").css("background-color","#33cc33"); 
+		band0prev = true; 
+	} else { 
+		$("#beatBox1").css("background-color","#cc3333"); 		
+		band0prev = false; 
+	}
+	if (beats[1]){
+		$("#beatBox2").css("background-color","#33cc33"); 
+		band1prev = true; 
+	} else { 
+		$("#beatBox2").css("background-color","#cc3333"); 
+		band1prev = false; 
+	}
+	if (beats[2]){
+		$("#beatBox3").css("background-color","#33cc33"); 
+		band2prev = true; 
+	} else { 
+		$("#beatBox3").css("background-color","#cc3333"); 
+		band2prev = false; 
+	}
+	if (beats[3]){
+		$("#beatBox4").css("background-color","#33cc33"); 
+		band3prev = true; 
+	} else { 
+		$("#beatBox4").css("background-color","#cc3333"); 
+		band3prev = false; 
+	}
+	if (beats[4]){
+		$("#beatBox5").css("background-color","#33cc33"); 
+		band4prev = true; 
+	} else { 
+		$("#beatBox5").css("background-color","#cc3333"); 
+		band4prev = false; 
+	}
+	if (beats[5]){
+		$("#beatBox6").css("background-color","#33cc33");  
+		band5prev = true; 
+	} else { 
+		$("#beatBox6").css("background-color","#cc3333"); 
+		band5prev = false; 
+	}
 }
 
 function detectBeats(currentAmp, lastAmp, avgAmp, prevDetect){
@@ -340,14 +285,11 @@ function scoreAgents(beatBool, bandAmp, average){
 	var topScore = 0; 
 	var tID = 0;
 	
-	var scoresJQ = new Array ( $("#score1"), $("#score2"), $("#score3"), 
-						       $("#score4"), $("#score5"), $("#score6") );
-
 	for(var i = 0; i < (beatBool.length); i++){
 		if(beatBool[i]){
-			addToArrayLimited( (average/128) + bandAmp[i], bandScoresHistory[i], 200 );
+			addToArrayLimited( (average/128) + bandAmp[i], bandScoresHistory[i], 100 );
 		} else {
-			addToArrayLimited( 0, bandScoresHistory[i], 200 );
+			addToArrayLimited( 0, bandScoresHistory[i], 100 );
 		}		
 		bandScores[i] = checkAvgAmp( bandScoresHistory[i] );
 		
@@ -359,7 +301,6 @@ function scoreAgents(beatBool, bandAmp, average){
 	for ( var i = 0; i < (scoresJQ.length); i++ ) {
 		scoresJQ[i].html( bandScores[i].toFixed(1) );
 		if ( i == tID ) {
-			//var bpm = checkBpmTimer();
 			scoresJQ[i].css("background-color","#33cc33"); 
 		} else {
 			scoresJQ[i].css("background-color","#222222"); 

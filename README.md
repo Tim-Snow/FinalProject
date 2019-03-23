@@ -1,4 +1,4 @@
-Final Project
+University Final Year Project
 =============
 <h4>Frequency Domain Analysis techniques used on music and using the data to influence a 3D Scene.</h4>
 
